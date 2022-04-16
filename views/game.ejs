@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Upload Files</title>
+  <script src="/siofu/client.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+  <link rel="stylesheet" href="/assets/style.css" type="text/css" />
+
+  
+  <script type="text/javascript">
+    
+    document.addEventListener(
+      "DOMContentLoaded",
+      function () {
+        // Initialize instances:
+        var socket = io.connect("");
+        var name = '<%=user%>'
+        var room = "Lounge";
+        joinRoom(room);
+
+        const messageContainer = document.getElementById('message-container')
+        const messageForm = document.getElementById('send-container')
+        const messageInput = document.getElementById('message-input')
+
+       
+
+        socket.emit('new-user', {name: name, room: room})
+
+        appendMessage(`Welcome, ${name}`)
+
+        socket.on('chat-message', data => {
+          appendMessage(`${data.name}: ${data.message}`)
+        })
+
+        socket.on('user-connected', data => {
+          console.log(data.name + " connected.")
+          appendMessage(`${data.name} connected`)
+        })
+
+        socket.on('user-disconnected', name => {
+          appendMessage(`${name} disconnected`)
+        })
+
+        messageForm.addEventListener('submit', e => {
+          e.preventDefault()
+          const message = messageInput.value
+          appendMessage(`You: ${message}`)
+          socket.emit('send-chat-message', {message:message, room:room})
+          messageInput.value = ''
+        })
+
+        function appendMessage(message) {
+          const messageElement = document.createElement('div')
+          messageElement.innerText = message
+          messageContainer.append(messageElement)
+        }
+
+        var siofu = new SocketIOFileUpload(socket);
+
+        siofu.listenOnInput(document.getElementById("upload_input"));
+
+        // Do something on upload progress:
+        siofu.addEventListener("progress", function (event) {
+          var percent = (event.bytesLoaded / event.file.size) * 100;
+          console.log("File is", percent.toFixed(2), "percent loaded");
+        });
+
+        // Do something when a file is uploaded:
+        siofu.addEventListener("complete", function (event) {
+          console.log(event.detail.name);
+
+          var video = document.createElement("video");
+          var div_small = document.createElement('div');
+          var span_timestamp = document.createElement('span');
+
+          div_small.setAttribute("class", "my-msg");
+          var br = document.createElement('br');
+
+          var p_username = document.createElement('p');
+          p_username.innerHTML = name;
+
+          video.setAttribute("controls", "controls");
+
+          video.src = event.detail.name;
+
+          span_timestamp.setAttribute("class", "timestamp");
+          var time = new Date().toLocaleString('pl-PL');
+          span_timestamp.innerHTML = time;
+
+          div_small.innerHTML = p_username.outerHTML + span_timestamp.outerHTML + video.outerHTML + br.outerHTML;
+
+          var div = document.getElementById("message-container");
+          socket.emit('send-video', {'room': room ,'src': video.src, 'name': name, 'timestamp': time })
+          div.appendChild(div_small);
+        });
+
+        socket.on('display-video', path => {
+
+          var video = document.createElement("video");
+          var div_small = document.createElement('div');
+          var span_timestamp = document.createElement('span');
+
+          div_small.setAttribute("class", "other-msg");
+          var br = document.createElement('br');
+
+          video.setAttribute("controls", "controls");
+          video.src = path.src;
+
+          var p_username = document.createElement('p');
+          p_username.innerHTML = path.name;
+
+
+          span_timestamp.setAttribute("class", "timestamp");
+          span_timestamp.innerHTML = path.timestamp;
+
+
+          div_small.innerHTML = p_username.outerHTML + span_timestamp.outerHTML + video.outerHTML + br.outerHTML;
+
+          var div = document.getElementById("message-container");
+
+          div.append(div_small);
+        })
+
+        socket.on('system-message', (data) => {
+          printSysMsg(data.msg);
+        })
+
+        document.querySelector('#create-room').onclick = () => {
+          socket.emit('create-room', { 'username': name, 'room': room, 'new_room_name': name })
+        }
+
+        socket.on('new-room-received', (data) => {
+          console.log(data)
+          let createdRoom = data.new_room_name;
+          const li = document.createElement('li')
+          li.innerHTML = createdRoom
+          li.setAttribute('class', 'room_object')
+          document.querySelector('#room_list').append(li)
+          if (name == data.username) {
+            leaveRoom(room)
+            room = createdRoom;
+            joinRoom(room)
+          }
+        })
+
+        document.querySelectorAll('.room_object').forEach(li => {
+          li.onclick = () => {
+            console.log("Clicker room: " + room)
+            let newRoom = li.innerHTML;
+            if (newRoom == room) {
+              msg = `Aktualnie jestes w pokoju ${room}.`
+              printSysMsg(msg);
+            } else {
+              leaveRoom(room);
+              room = newRoom;
+              joinRoom(room);
+            }
+          }
+        });
+
+        
+
+        function leaveRoom() {
+          socket.emit('leave', { 'username': name, 'room': room });
+        }
+
+        function joinRoom() {
+          socket.emit('join', { 'username': name, 'room': room });
+          document.querySelector('#message-container').innerHTML = ''
+        }
+
+        function printSysMsg(msg) {
+          const p = document.createElement('p');
+          p.innerHTML = msg;
+          document.querySelector('#message-container').append(p);
+        }
+
+      },
+      false
+    );
+
+
+  </script>
+</head>
+
+
+
+
+<body>
+
+  
+
+  <p>
+    <label>Choose File:
+      <input type="file" id="upload_input" multiple accept="file/*" /></label>
+  </p>
+  
+ 
+
+
+  <div id="message-container">
+
+
+  </div>
+
+  <div id="rooms-container" style="float: right;width: 300px; height: 300px; border-style: solid; padding-left: 10px; margin-left:20px">
+    <button id="create-room">CREATE ROOM</button>
+    
+    <ul id="room_list">
+      <p> Dostępne pokoje: </p>
+      <% for(var k=0; k<roomlist.length; k++) {%>
+         <li class="room_object"><%= roomlist[k] %></li>
+      <% } %>
+      </ul>
+    
+  
+  </div>
+
+
+
+  <form id="send-container">
+    <input type="text" id="message-input">
+    <button type="submit" id="send-button">Send</button>
+  </form>
+
+
+
+
+
+</body>
+
+</html>
